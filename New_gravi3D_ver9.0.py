@@ -21,11 +21,19 @@ import fileinput
 #Load the stations coordinates
 MPs=np.loadtxt(MPs_file_name)
 #Load the polygons/isolines/height lines coordinates for BGPOLY
-poly_data=x_poly, y_poly, z_poly=np.loadtxt(poly_file_name, unpack=True)
+if routine=='BGPOLY':
+    poly_data=x_poly, y_poly, z_poly=np.loadtxt(poly_file_name, unpack=True)
 #Load the polygons/isolines/height lines density values for BGPOLY
-rho_poly=np.loadtxt(density_poly_file_name)
+    rho_poly=np.loadtxt(density_poly_file_name)
 #Load the prisms coordinates and density values for PRISMA
-pri_data=x2s, x1s, y2s, y1s, z2s, z1s, rho_pri=np.loadtxt(prism_file_name, unpack=True)
+if routine=='PRISMA':
+    pri_data=x2s, x1s, y2s, y1s, z2s, z1s, rho_pri=np.loadtxt(prism_file_name, unpack=True)
+
+
+#FLAG FOR DEBUGGING MODE 0=OFF, 1=ON 
+#CHANGE THIS FLAG ONLY IF YOU WANT ALL INTERMEDIATE CALCULATIONS RESULTS
+#IT WILL CREATE INDIVIDUAL FILES FOR EACH STATIONS/MP 
+DEBUG=1
 
 #########################################
 #FUNCTIONS DEFINITION
@@ -116,7 +124,7 @@ def bgpoly_arcsin(z_iso, q, p, f, S):
     arcsin_exp2=z_iso*f*S/(p*p + z_iso*z_iso)**(1/2)
     diff_arcsin= np.abs(arcsin_exp1-arcsin_exp2)
     
-    if diff_arcsin <= 0.0001:
+    if diff_arcsin <= 0.000001:
         G_E_arcsin= - np.arcsin(1) + np.arcsin(1)
         print('replaced arcsin value', file=file)
     else :
@@ -131,7 +139,7 @@ def bgpoly_arccos(x_iso1, x_iso2, y_iso1, y_iso2, r, r_1):
     #Avoiding nan for np.arccos(x) because of float format where arccos_exp = 1.000000002
     arccos_exp=(x_iso1/r)*(x_iso2/r_1) + (y_iso1/r)*(y_iso2/r_1)
     
-    if 1 < arccos_exp <= 1.0001 :
+    if 1 < arccos_exp <= 1.000001 :
         G_E_arccos = 1
     elif -1.0001 < arccos_exp < -1:
         G_E_arccos = -1
@@ -151,7 +159,7 @@ def iso_eff(z_iso, x_iso1, x_iso2, y_iso1, y_iso2, r, r_1, q, p, f, W, S):
 
 
     return G_E
-
+#Function to do the interpolation between 3 isolines and return the gravity effect
 def body_func(V1,V2,V3,z1,z2,z3):
     Body_eff=1/6*(V1*(z1-z3)/(z1-z2)*(3*z2-z3-2*z1) + V2*(z1-z3)**3/((z2-z3)*(z2-z1)) \
             + V3*(z1-z3)/(z3-z2)*(3*z2-z1-2*z3))
@@ -174,34 +182,77 @@ def body_func(V1,V2,V3,z1,z2,z3):
 #+(x2_prism, y1_prism, z2_prism)
 #-(x1_prism, y1_prism, z2_prism)
 
-def easy_prism(x,y,z):
-#    real_prism=x*np.log(y + np.sqrt(np.abs(x)*np.abs(x) + np.abs(y)*np.abs(y)+z*z)) \
-#                + y*np.log(x + np.sqrt(np.abs(x)*np.abs(x)+np.abs(y)*np.abs(y)+z*z)) \
-#               - z*np.arcsin((z*z+y*y+y*np.sqrt(np.abs(x)*np.abs(x) + np.abs(y)*np.abs(y)+z*z)) \
-#                / ((y + np.sqrt(np.abs(x)*np.abs(x) + np.abs(y)*np.abs(y)+z*z))*np.sqrt(np.abs(y)*np.abs(y)+z*z)))
-    
-    real_prism1= x*np.log(y + np.sqrt(np.abs(x)*np.abs(x) + np.abs(y)*np.abs(y)+z*z)) 
-    real_prism2= y*np.log(x + np.sqrt(np.abs(x)*np.abs(x)+np.abs(y)*np.abs(y)+z*z)) 
-    real_prism3_1=(z*z+y*y+y*np.sqrt(np.abs(x)*np.abs(x) + np.abs(y)*np.abs(y)+z*z))
-    real_prism3_2=((y + np.sqrt(np.abs(x)*np.abs(x) + np.abs(y)*np.abs(y)+z*z))*np.sqrt(np.abs(y)*np.abs(y)+z*z))
-    prism3_diff=np.abs(real_prism3_1-real_prism3_2)
-   #real_prism3=z*np.arcsin((z*z+y*y+y*np.sqrt(np.abs(x)*np.abs(x) + np.abs(y)*np.abs(y)+z*z))/((y + np.sqrt(np.abs(x)*np.abs(x) + np.abs(y)*np.abs(y)+z*z))*np.sqrt(np.abs(y)*np.abs(y)+z*z)))
+def prism_func(x,y,z):
+# Full expression is: x*np.log(y + np.sqrt(np.abs(x)*np.abs(x) + np.abs(y)*np.abs(y)+z*z)) \
+#                     + y*np.log(x + np.sqrt(np.abs(x)*np.abs(x)+np.abs(y)*np.abs(y)+z*z)) \
+#                     - z*np.arcsin((z*z+y*y+y*np.sqrt(np.abs(x)*np.abs(x) + np.abs(y)*np.abs(y)+z*z)) \
+#                     / ((y + np.sqrt(np.abs(x)*np.abs(x) + np.abs(y)*np.abs(y)+z*z))*np.sqrt(np.abs(y)*np.abs(y)+z*z)))
+# The full expression is separated into the following parts    
+    expr_prism1= x*np.log(y + np.sqrt(np.abs(x)*np.abs(x) + np.abs(y)*np.abs(y)+z*z)) 
+    expr_prism2= y*np.log(x + np.sqrt(np.abs(x)*np.abs(x)+np.abs(y)*np.abs(y)+z*z)) 
+    expr_prism3_1=(z*z+y*y+y*np.sqrt(np.abs(x)*np.abs(x) + np.abs(y)*np.abs(y)+z*z))
+    expr_prism3_2=((y + np.sqrt(np.abs(x)*np.abs(x) + np.abs(y)*np.abs(y)+z*z))*np.sqrt(np.abs(y)*np.abs(y)+z*z))
+    prism3_diff=np.abs(expr_prism3_1-expr_prism3_2)
+#The full arcsin expression is: z*np.arcsin((z*z+y*y+y*np.sqrt(np.abs(x)*np.abs(x) + np.abs(y)*np.abs(y)+z*z))/((y + np.sqrt(np.abs(x)*np.abs(x) + np.abs(y)*np.abs(y)+z*z))*np.sqrt(np.abs(y)*np.abs(y)+z*z)))
     #Avoiding np.arcsin(x) with x>1 because of float format
     if prism3_diff <= 0.0001 :
-        real_prism3=z*np.arcsin(1)
+        expr_prism3=z*np.arcsin(1)
     else:
-        real_prism3=z*np.arcsin(real_prism3_1/real_prism3_2)
+        expr_prism3=z*np.arcsin(expr_prism3_1/expr_prism3_2)
         
-    real_prism=real_prism1+real_prism2-real_prism3
-    print('',file=file)
-    print('real_prism1 = '+str(real_prism1),file=file)
-    print('real_prism2 = '+str(real_prism2),file=file)
-    print('real_prism3 = '+str(real_prism3),file=file)
-    print('real_prism3_1 = '+str(real_prism3_1),file=file)
-    print('real_prism3_2 = '+str(real_prism3_2),file=file)
-    print('',file=file)
-    return real_prism
+    full_expr_prism=expr_prism1+expr_prism2-expr_prism3
+    if DEBUG==1:
+        print('',file=file)
+        print('Prisma expression part 1 = '+str(expr_prism1),file=file)
+        print('Prisma expression part 2 = '+str(expr_prism2),file=file)
+        print('Prisma expression part 3 = '+str(expr_prism3),file=file)
+        print('Prisma expression part 3_1 = '+str(expr_prism3_1),file=file)
+        print('Prisma expression part 3_2 = '+str(expr_prism3_2),file=file)
+        print('',file=file)
+    return full_expr_prism
 
+def prism_case(xmax, xmin, ymax, ymin, zmax, zmin):
+    part1=prism_func(xmax, ymax, zmin)
+    part2=prism_func(xmin, ymax, zmin)
+    part3=prism_func(xmax, ymin, zmin)
+    part4=prism_func(xmin, ymin, zmin)
+    part5=prism_func(xmax, ymax, zmax)
+    part6=prism_func(xmin, ymax, zmax)
+    part7=prism_func(xmax, ymin, zmax)
+    part8=prism_func(xmin, ymin, zmax)
+    if DEBUG==1:
+        print('',file=file)
+        print('Prisma case results for coordinates xmax: '+str(xmax)+' xmin: '+str(xmin)+' ymax: '+str(ymax)+' ymin: '+str(ymin)+' zmax: '+str(zmax)+' zmin: '+str(zmin)+' :',file=file)
+        print('',file=file)
+        print('part 1 results '+str(part1),file=file)
+        print('part 2 results '+str(part2),file=file)
+        print('part 3 results '+str(part3),file=file)
+        print('part 4 results '+str(part4),file=file)
+        print('part 5 results '+str(part5),file=file)
+        print('part 6 results '+str(part6),file=file)
+        print('part 7 results '+str(part7),file=file)
+        print('part 8 results '+str(part8),file=file)
+        print('',file=file)    
+    return part1, part2, part3, part4, part5, part6, part7, part8
+
+
+def prism_part_sum(prism_parts):
+    #Based on prism_case() results, the sum is part1 - part2 - part3 + part4 - part5 + part6 + part7 - part8
+    sum_prism= prism_parts[0] - prism_parts[1] - prism_parts[2] + prism_parts[3] - prism_parts[4] + prism_parts[5] + prism_parts[6] - prism_parts[7]
+    if DEBUG==1:
+        print('',file=file)
+        print('Sum of all the prism segments :'+ str(sum_prism),file=file)
+        print('',file=file)    
+    return sum_prism
+
+def sub_prism_sum(subPrismEff):
+    fullPrismEff=sum(subPrismEff)
+    if DEBUG==1:
+        print('',file=file)
+        print('The initial prism was divided into sub-prisms.', file=file)
+        print('Sum of all the sub-prisms :'+ str(fullPrismEff),file=file)
+        print('',file=file)   
+    return fullPrismEff
 ######################################
 #PARAMETERS AND CONSTANTS
 ######################################
@@ -224,10 +275,16 @@ G=6.67408*10**(-11)
 #INPUT CHECK
 ########################################
 #Input checks common to both routines
+
+#DEBUG FLAG CHECK
+if DEBUG ==1:
+    print("Debug mode is ON multiple files with intermediate calculation results for each stations will be created.")
+#If the input for "routine" is different from BGPOLY or PRISMA, raise an error and exit
+if routine != 'PRISMA' and routine != 'BGPOLY':
+    sys.exit('The routine name is wrong, please using either "BGPOLY" or "PRISMA" as inputs, with quotations marks and full capital letters.')
 #Check the total number of MP
-number_stations=np.asarray(number_stations)
 total_stations=len(MPs)
-if sum(number_stations) != total_stations:
+if number_stations != total_stations:
     sys.exit("The total number of stations is not the same as indicated : input total is "+str(sum(number_stations))+" , total in file is "+str(total_stations)+" please check your input")
 #Check that the MPs are within the user's defined study region
 if MPs[:,0].max() > area_MP[0]:
@@ -250,12 +307,7 @@ if MPs[:,2].min() < area_MP[5]:
     sys.exit("The following stations are out of boundary along the z axis check station(s) "+str(outofbx[0])+" or check your defined study area min z axis value.")    
 #If the folder where the run will be saved doesn't exist, it will be created 
 if not os.path.exists(run_folder_name):
-    os.makedirs(run_folder_name)
-
-#If the input for "routine" is different from BGPOLY or PRISMA, raise an error and exit
-if routine != 'PRISMA' and routine != 'BGPOLY':
-    sys.exit('The routine name is wrong, please using either "BGPOLY" or "PRISMA" as inputs, with quotations marks and full capital letters.')
-    
+    os.makedirs(run_folder_name)    
 #Input checks for PRISMA's routine
 if routine=='PRISMA':
     print("Selected routine is 'PRISMA'")
@@ -570,18 +622,11 @@ if routine=='PRISMA':
     #Normalize prism coordinates and set each MP as the origin
     #store all the prisms in one array
     nb_MPs=len(MPs)
-    data_prisms=[x2s,x1s,y2s,y1s,z2s,z1s,rho_pri]
     nb_prisms=x2s.size
+
     prism_results=np.zeros(shape=(nb_MPs,nb_prisms))
-    prism_results_2=np.zeros(shape=(nb_MPs,nb_prisms))
-    real_results=np.zeros(shape=(nb_MPs,nb_prisms))
-    realest_results=np.zeros(shape=(nb_MPs,nb_prisms))
-    stor_x=np.zeros(shape=(nb_MPs,4))
-    stor_y=np.zeros(shape=(nb_MPs,4))
     prism_effect=np.zeros(shape=(nb_MPs,nb_prisms))
     
-    real_effect=np.zeros(shape=(nb_MPs,nb_prisms))
-    realest_effect=np.zeros(shape=(nb_MPs,nb_prisms))
     sum_prism_effect=np.zeros(nb_MPs)
     
     
@@ -633,531 +678,161 @@ if routine=='PRISMA':
 #For x1 and x2, y1 and y2 of same signs
             if x1_prism >=0 and x2_prism >=0:
                 if y1_prism >=0 and y2_prism >=0:
-                    p1_part1=easy_prism(x2_prism, y2_prism, z1_prism)
-                    p1_part2=easy_prism(x1_prism, y2_prism, z1_prism)
-                    p1_part3=easy_prism(x2_prism, y1_prism, z1_prism)
-                    p1_part4=easy_prism(x1_prism, y1_prism, z1_prism)
-                    p1_part5=easy_prism(x2_prism, y2_prism, z2_prism)
-                    p1_part6=easy_prism(x1_prism, y2_prism, z2_prism)
-                    p1_part7=easy_prism(x2_prism, y1_prism, z2_prism)
-                    p1_part8=easy_prism(x1_prism, y1_prism, z2_prism)
+                    prism_parts_xy_pos=prism_case(x2_prism, x1_prism, y2_prism, y1_prism, z2_prism, z1_prism)
                     
-                    print('',file=file)
-                    print('Easy_prism results :',file=file)
-                    print('',file=file)
-                    print('p1_1  '+str(p1_part1),file=file)
-                    print('p1_2  '+str(p1_part2),file=file)
-                    print('p1_3  '+str(p1_part3),file=file)
-                    print('p1_4  '+str(p1_part4),file=file)
-                    print('p1_5  '+str(p1_part5),file=file)
-                    print('p1_6  '+str(p1_part6),file=file)
-                    print('p1_7  '+str(p1_part7),file=file)
-                    print('p1_8  '+str(p1_part8),file=file)
-                    print('',file=file)
+                    prism_results[i][j]=prism_part_sum(prism_parts_xy_pos)
                     
-                    realest_results[i][j]=p1_part1-p1_part2-p1_part3+p1_part4-p1_part5+p1_part6+p1_part7-p1_part8
-                    
-                    print('',file=file)
-                    print('Realest results : '+str(realest_results[i][j]),file=file)
                     print('',file=file)
                     print('x and y signs are positive, x and y values are '+str(x2_prism)+' '+str(x1_prism)+' and '+str(y2_prism)+' '+str(y1_prism),file=file)
                     print('',file=file)
                 
                 elif y1_prism < 0 and y2_prism < 0:
-                    p1_part1=easy_prism(x2_prism, -y1_prism, z1_prism)
-                    p1_part2=easy_prism(x1_prism, -y1_prism, z1_prism)
-                    p1_part3=easy_prism(x2_prism, -y2_prism, z1_prism)
-                    p1_part4=easy_prism(x1_prism, -y2_prism, z1_prism)
-                    p1_part5=easy_prism(x2_prism, -y1_prism, z2_prism)
-                    p1_part6=easy_prism(x1_prism, -y1_prism, z2_prism)
-                    p1_part7=easy_prism(x2_prism, -y2_prism, z2_prism)
-                    p1_part8=easy_prism(x1_prism, -y2_prism, z2_prism)
+                    prism_parts_xy_pos_neg=prism_case(x2_prism, x1_prism, -y1_prism, -y2_prism, z2_prism, z1_prism)
+
+                    prism_results[i][j]=prism_part_sum(prism_parts_xy_pos_neg)
                     
-                    print('',file=file)
-                    print('Easy_prism results :',file=file)
-                    print('',file=file)
-                    print('p1_1  '+str(p1_part1),file=file)
-                    print('p1_2  '+str(p1_part2),file=file)
-                    print('p1_3  '+str(p1_part3),file=file)
-                    print('p1_4  '+str(p1_part4),file=file)
-                    print('p1_5  '+str(p1_part5),file=file)
-                    print('p1_6  '+str(p1_part6),file=file)
-                    print('p1_7  '+str(p1_part7),file=file)
-                    print('p1_8  '+str(p1_part8),file=file)
-                    print('',file=file)
-                    
-                    realest_results[i][j]=p1_part1-p1_part2-p1_part3+p1_part4-p1_part5+p1_part6+p1_part7-p1_part8
-                    
-                    print('',file=file)
-                    print('Realest results : '+str(realest_results[i][j]),file=file)
-                    print('',file=file)
                     print('',file=file)
                     print('x signs are positive, y signs are negative, x and y values are '+str(x2_prism)+' '+str(x1_prism)+' and '+str(y2_prism)+' '+str(y1_prism),file=file)
                     print('',file=file)
 #For y1 and y2 of different signs and x1 and x2 of same sign
+#The prism is separated in two, each part effect is calculated separately and then their effect is summed
                 else :
-                    p1_part1=easy_prism(x2_prism, y2_prism, z1_prism)
-                    p1_part2=easy_prism(x1_prism, y2_prism, z1_prism)
-                    p1_part3=easy_prism(x2_prism, 0, z1_prism)
-                    p1_part4=easy_prism(x1_prism, 0, z1_prism)
-                    p1_part5=easy_prism(x2_prism, y2_prism, z2_prism)
-                    p1_part6=easy_prism(x1_prism, y2_prism, z2_prism)
-                    p1_part7=easy_prism(x2_prism, 0, z2_prism)
-                    p1_part8=easy_prism(x1_prism, 0, z2_prism)
+                    #Effect of the first half of the prism
+                    prism_parts_xy_pos_dif_p1=prism_case(x2_prism, x1_prism, y2_prism, 0, z2_prism, z1_prism)
+
+                    prism_results_p1=prism_part_sum(prism_parts_xy_pos_dif_p1)
+                    
+                    #Effect of the second half of the prism
+                    prism_parts_xy_pos_dif_p2=prism_case(x2_prism, x1_prism, -y1_prism, 0, z2_prism, z1_prism)
                                         
-                    print('',file=file)
-                    print('Easy_prism results :',file=file)
-                    print('',file=file)
-                    print('p1_1  '+str(p1_part1),file=file)
-                    print('p1_2  '+str(p1_part2),file=file)
-                    print('p1_3  '+str(p1_part3),file=file)
-                    print('p1_4  '+str(p1_part4),file=file)
-                    print('p1_5  '+str(p1_part5),file=file)
-                    print('p1_6  '+str(p1_part6),file=file)
-                    print('p1_7  '+str(p1_part7),file=file)
-                    print('p1_8  '+str(p1_part8),file=file)
-                    print('',file=file)
+                    prism_results_p2=prism_part_sum(prism_parts_xy_pos_dif_p2)
+                    
+                    #Sum for the total prism effect                    
+                    prism_results[i][j]=sub_prism_sum([prism_results_p1,prism_results_p2])
                                         
-                    realest_results_p1=p1_part1-p1_part2-p1_part3+p1_part4-p1_part5+p1_part6+p1_part7-p1_part8
-                                        
-                    print('',file=file)
-                    print('realest results part 1  '+ str(realest_results_p1),file=file)
-                    print('',file=file)
-                                        
-                    p2_part1=easy_prism(x2_prism, -y1_prism, z1_prism)
-                    p2_part2=easy_prism(x1_prism, -y1_prism, z1_prism)
-                    p2_part3=easy_prism(x2_prism, 0, z1_prism)
-                    p2_part4=easy_prism(x1_prism, 0, z1_prism)
-                    p2_part5=easy_prism(x2_prism, -y1_prism, z2_prism)
-                    p2_part6=easy_prism(x1_prism, -y1_prism, z2_prism)
-                    p2_part7=easy_prism(x2_prism, 0, z2_prism)
-                    p2_part8=easy_prism(x1_prism, 0, z2_prism)
-                                        
-                    print('',file=file)
-                    print('Easy_prism results :',file=file)
-                    print('',file=file)
-                    print('p2_1  '+str(p2_part1),file=file)
-                    print('p2_2  '+str(p2_part2),file=file)
-                    print('p2_3  '+str(p2_part3),file=file)
-                    print('p2_4  '+str(p2_part4),file=file)
-                    print('p2_5  '+str(p2_part5),file=file)
-                    print('p2_6  '+str(p2_part6),file=file)
-                    print('p2_7  '+str(p2_part7),file=file)
-                    print('p2_8  '+str(p2_part8),file=file)
-                    print('',file=file)
-                                        
-                    realest_results_p2=p2_part1-p2_part2-p2_part3+p2_part4-p2_part5+p2_part6+p2_part7-p2_part8
-                                        
-                    print('',file=file)
-                    print('realest results part 2  '+ str(realest_results_p2),file=file)
-                    print('',file=file)
-                                            
-                    realest_results[i][j]=realest_results_p1+realest_results_p2
-                                        
-                    print('',file=file)
-                    print('Realest results : '+str(realest_results[i][j]),file=file)
-                    print('',file=file)
                     print('',file=file)
                     print('x signs are positive, y have different signs, y values are '+str(y2_prism)+' '+str(y1_prism),file=file)
                     print('',file=file)
                                 
             elif x1_prism < 0 and x2_prism < 0:
                 if y1_prism >=0 and y2_prism >=0:
-                    p1_part1=easy_prism(-x1_prism, y2_prism, z1_prism)
-                    p1_part2=easy_prism(-x2_prism, y2_prism, z1_prism)
-                    p1_part3=easy_prism(-x1_prism, y1_prism, z1_prism)
-                    p1_part4=easy_prism(-x2_prism, y1_prism, z1_prism)
-                    p1_part5=easy_prism(-x1_prism, y2_prism, z2_prism)
-                    p1_part6=easy_prism(-x2_prism, y2_prism, z2_prism)
-                    p1_part7=easy_prism(-x1_prism, y1_prism, z2_prism)
-                    p1_part8=easy_prism(-x2_prism, y1_prism, z2_prism)
-                    
-                    print('',file=file)
-                    print('Easy_prism results :',file=file)
-                    print('',file=file)
-                    print('p1_1  '+str(p1_part1),file=file)
-                    print('p1_2  '+str(p1_part2),file=file)
-                    print('p1_3  '+str(p1_part3),file=file)
-                    print('p1_4  '+str(p1_part4),file=file)
-                    print('p1_5  '+str(p1_part5),file=file)
-                    print('p1_6  '+str(p1_part6),file=file)
-                    print('p1_7  '+str(p1_part7),file=file)
-                    print('p1_8  '+str(p1_part8),file=file)
-                    print('',file=file)
-                        
-                    realest_results[i][j]=p1_part1-p1_part2-p1_part3+p1_part4-p1_part5+p1_part6+p1_part7-p1_part8
-                                            
-                    print('',file=file)
-                    print('Realest results : '+str(realest_results[i][j]),file=file)
-                    print('',file=file)
+                    prism_parts_xy_neg_pos=prism_case(-x1_prism, -x2_prism, y2_prism, y1_prism, z2_prism, z1_prism)
+
+                    prism_results[i][j]=prism_part_sum(prism_parts_xy_neg_pos)
+
                     print('',file=file)
                     print('x signs are negative, y signs are positive, x and y values are '+str(x2_prism)+' '+str(x1_prism)+' and '+str(y2_prism)+' '+str(y1_prism),file=file)
                     print('',file=file)
                         
                 elif y1_prism < 0 and y2_prism < 0:
-                    p1_part1=easy_prism(-x1_prism, -y1_prism, z1_prism)
-                    p1_part2=easy_prism(-x2_prism, -y1_prism, z1_prism)
-                    p1_part3=easy_prism(-x1_prism, -y2_prism, z1_prism)
-                    p1_part4=easy_prism(-x2_prism, -y2_prism, z1_prism)
-                    p1_part5=easy_prism(-x1_prism, -y1_prism, z2_prism)
-                    p1_part6=easy_prism(-x2_prism, -y1_prism, z2_prism)
-                    p1_part7=easy_prism(-x1_prism, -y2_prism, z2_prism)
-                    p1_part8=easy_prism(-x2_prism, -y2_prism, z2_prism)
-                    
-                    print('',file=file)
-                    print('Easy_prism results :',file=file)
-                    print('',file=file)
-                    print('p1_1  '+str(p1_part1),file=file)
-                    print('p1_2  '+str(p1_part2),file=file)
-                    print('p1_3  '+str(p1_part3),file=file)
-                    print('p1_4  '+str(p1_part4),file=file)
-                    print('p1_5  '+str(p1_part5),file=file)
-                    print('p1_6  '+str(p1_part6),file=file)
-                    print('p1_7  '+str(p1_part7),file=file)
-                    print('p1_8  '+str(p1_part8),file=file)
-                    print('',file=file)
-                    
-                    realest_results[i][j]=p1_part1-p1_part2-p1_part3+p1_part4-p1_part5+p1_part6+p1_part7-p1_part8
-                    
-                    print('',file=file)
-                    print('Realest results : '+str(realest_results[i][j]),file=file)
-                    print('',file=file)
+                    prism_parts_xy_neg=prism_case(-x1_prism, -x2_prism, -y1_prism, -y2_prism, z2_prism, z1_prism)
+
+                    prism_results[i][j]=prism_part_sum(prism_parts_xy_neg)
+
                     print('',file=file)
                     print('x and y signs are negative, x and y values are '+str(x2_prism)+' '+str(x1_prism)+' and '+str(y2_prism)+' '+str(y1_prism),file=file)
                     print('',file=file)
- #For y1 and y2 of different signs and x1 and x2 of same sign
+#For y1 and y2 of different signs and x1 and x2 of same sign
+#The prism is separated in two, each part effect is calculated separately and then their effect is summed
                 else :
-                    p1_part1=easy_prism(-x1_prism, y2_prism, z1_prism)
-                    p1_part2=easy_prism(-x2_prism, y2_prism, z1_prism)
-                    p1_part3=easy_prism(-x1_prism, 0, z1_prism)
-                    p1_part4=easy_prism(-x2_prism, 0, z1_prism)
-                    p1_part5=easy_prism(-x1_prism, y2_prism, z2_prism)
-                    p1_part6=easy_prism(-x2_prism, y2_prism, z2_prism)
-                    p1_part7=easy_prism(-x1_prism, 0, z2_prism)
-                    p1_part8=easy_prism(-x2_prism, 0, z2_prism)
+                    #Effect of the first half of the prism
+                    prism_parts_xy_neg_dif_p1=prism_case(-x1_prism, -x2_prism, y2_prism, 0, z2_prism, z1_prism)
+
+                    prism_results_p1=prism_part_sum(prism_parts_xy_neg_dif_p1)
                     
-                    print('',file=file)
-                    print('Easy_prism results :',file=file)
-                    print('',file=file)
-                    print('p1_1  '+str(p1_part1),file=file)
-                    print('p1_2  '+str(p1_part2),file=file)
-                    print('p1_3  '+str(p1_part3),file=file)
-                    print('p1_4  '+str(p1_part4),file=file)
-                    print('p1_5  '+str(p1_part5),file=file)
-                    print('p1_6  '+str(p1_part6),file=file)
-                    print('p1_7  '+str(p1_part7),file=file)
-                    print('p1_8  '+str(p1_part8),file=file)
-                    print('',file=file)
+                    #Effect of the second half of the prism
+                    prism_parts_xy_neg_dif_p2=prism_case(-x1_prism, -x2_prism, -y1_prism, 0, z2_prism, z1_prism)
+                                        
+                    prism_results_p2=prism_part_sum(prism_parts_xy_neg_dif_p2)                    
                     
-                    realest_results_p1=p1_part1-p1_part2-p1_part3+p1_part4-p1_part5+p1_part6+p1_part7-p1_part8
+                    #Sum for the total prism effect 
+                    prism_results[i][j]=sub_prism_sum([prism_results_p1,prism_results_p2])
                     
-                    print('',file=file)
-                    print('realest results part 1  '+ str(realest_results_p1),file=file)
-                    print('',file=file)
-                    
-                    p2_part1=easy_prism(-x1_prism, -y1_prism, z1_prism)
-                    p2_part2=easy_prism(-x2_prism, -y1_prism, z1_prism)
-                    p2_part3=easy_prism(-x1_prism, 0, z1_prism)
-                    p2_part4=easy_prism(-x2_prism, 0, z1_prism)
-                    p2_part5=easy_prism(-x1_prism, -y1_prism, z2_prism)
-                    p2_part6=easy_prism(-x2_prism, -y1_prism, z2_prism)
-                    p2_part7=easy_prism(-x1_prism, 0, z2_prism)
-                    p2_part8=easy_prism(-x2_prism, 0, z2_prism)
-                    
-                    print('',file=file)
-                    print('Easy_prism results :',file=file)
-                    print('',file=file)
-                    print('p2_1  '+str(p2_part1),file=file)
-                    print('p2_2  '+str(p2_part2),file=file)
-                    print('p2_3  '+str(p2_part3),file=file)
-                    print('p2_4  '+str(p2_part4),file=file)
-                    print('p2_5  '+str(p2_part5),file=file)
-                    print('p2_6  '+str(p2_part6),file=file)
-                    print('p2_7  '+str(p2_part7),file=file)
-                    print('p2_8  '+str(p2_part8),file=file)
-                    print('',file=file)
-                    
-                    realest_results_p2=p2_part1-p2_part2-p2_part3+p2_part4-p2_part5+p2_part6+p2_part7-p2_part8
-                    
-                    print('',file=file)
-                    print('realest results part 2  '+ str(realest_results_p2),file=file)
-                    print('',file=file)
-                    
-                    realest_results[i][j]=realest_results_p1+realest_results_p2
-                    
-                    print('',file=file)
-                    print('Realest results : '+str(realest_results[i][j]),file=file)
-                    print('',file=file)
+
                     print('',file=file)
                     print('x signs are negative, y have different signs, y values are '+str(y2_prism)+' '+str(y1_prism),file=file)
                     print('',file=file)
                     
 #For x1 and x2 of different signs and y1 and y2 of same signs
+#The prism is separated in two, each part effect is calculated separately and then their effect is summed
             else :
                 if y1_prism >=0 and y2_prism >=0:
-                    p1_part1=easy_prism(x2_prism, y2_prism, z1_prism)
-                    p1_part2=easy_prism(0, y2_prism, z1_prism)
-                    p1_part3=easy_prism(x2_prism, y1_prism, z1_prism)
-                    p1_part4=easy_prism(0, y1_prism, z1_prism)
-                    p1_part5=easy_prism(x2_prism, y2_prism, z2_prism)
-                    p1_part6=easy_prism(0, y2_prism, z2_prism)
-                    p1_part7=easy_prism(x2_prism, y1_prism, z2_prism)
-                    p1_part8=easy_prism(0, y1_prism, z2_prism)
+                    #Effect of the first half of the prism
+                    prism_parts_xy_dif_pos_p1=prism_case(x2_prism, 0, y2_prism, y1_prism, z2_prism, z1_prism)
+                                       
+                    prism_results_p1=prism_part_sum(prism_parts_xy_dif_pos_p1)
+
+                    #Effect of the second half of the prism
+                    prism_parts_xy_dif_pos_p2=prism_case(-x1_prism, 0, y2_prism, y1_prism, z2_prism, z1_prism)
                                         
-                    print('',file=file)
-                    print('Easy_prism results :',file=file)
-                    print('',file=file)
-                    print('p1_1  '+str(p1_part1),file=file)
-                    print('p1_1  '+str(p1_part1),file=file)
-                    print('p1_3  '+str(p1_part3),file=file)
-                    print('p1_4  '+str(p1_part4),file=file)
-                    print('p1_5  '+str(p1_part5),file=file)
-                    print('p1_6  '+str(p1_part6),file=file)
-                    print('p1_7  '+str(p1_part7),file=file)
-                    print('p1_8  '+str(p1_part8),file=file)
-                    print('',file=file)
-                                        
-                    realest_results_p1=p1_part1-p1_part2-p1_part3+p1_part4-p1_part5+p1_part6+p1_part7-p1_part8
-                                        
-                    print('',file=file)
-                    print('realest results part 1  '+ str(realest_results_p1),file=file)
-                    print('',file=file)
+                    prism_results_p2=prism_part_sum(prism_parts_xy_dif_pos_p2)
                     
-                    p2_part1=easy_prism(-x1_prism, y2_prism, z1_prism)
-                    p2_part2=easy_prism(0, y2_prism, z1_prism)
-                    p2_part3=easy_prism(-x1_prism, y1_prism, z1_prism)
-                    p2_part4=easy_prism(0, y1_prism, z1_prism)
-                    p2_part5=easy_prism(-x1_prism, y2_prism, z2_prism)
-                    p2_part6=easy_prism(0, y2_prism, z2_prism)
-                    p2_part7=easy_prism(-x1_prism, y1_prism, z2_prism)
-                    p2_part8=easy_prism(0, y1_prism, z2_prism)
-                                    
-                    print('',file=file)
-                    print('Easy_prism results :',file=file)
-                    print('',file=file)
-                    print('p2_1  '+str(p2_part1),file=file)
-                    print('p2_2  '+str(p2_part2),file=file)
-                    print('p2_3  '+str(p2_part3),file=file)
-                    print('p2_4  '+str(p2_part4),file=file)
-                    print('p2_5  '+str(p2_part5),file=file)
-                    print('p2_6  '+str(p2_part6),file=file)
-                    print('p2_7  '+str(p2_part7),file=file)
-                    print('p2_8  '+str(p2_part8),file=file)
-                    print('',file=file)
+                    #Sum for the total prism effect
+                    prism_results[i][j]=sub_prism_sum([prism_results_p1,prism_results_p2])
                     
-                    realest_results_p2=p2_part1-p2_part2-p2_part3+p2_part4-p2_part5+p2_part6+p2_part7-p2_part8
-                    
-                    print('',file=file)
-                    print('realest results part 2  '+ str(realest_results_p2),file=file)
-                    print('',file=file)
-                    
-                    realest_results[i][j]=realest_results_p1+realest_results_p2
-                    
-                    print('',file=file)
-                    print('Realest results : '+str(realest_results[i][j]),file=file)
-                    print('',file=file)
                     print('',file=file)
                     print('x have different signs, y signs are positive, x values are '+str(x2_prism)+' '+str(x1_prism),file=file)
                     print('',file=file)
                     
                 elif y1_prism < 0 and y2_prism < 0:
-                    p1_part1=easy_prism(x2_prism, -y1_prism, z1_prism)
-                    p1_part2=easy_prism(0, -y1_prism, z1_prism)
-                    p1_part3=easy_prism(x2_prism, -y2_prism, z1_prism)
-                    p1_part4=easy_prism(0, -y2_prism, z1_prism)
-                    p1_part5=easy_prism(x2_prism, -y1_prism, z2_prism)
-                    p1_part6=easy_prism(0, -y1_prism, z2_prism)
-                    p1_part7=easy_prism(x2_prism, -y2_prism, z2_prism)
-                    p1_part8=easy_prism(0, -y2_prism, z2_prism)
-                
-                    print('',file=file)
-                    print('Easy_prism results :',file=file)
-                    print('',file=file)
-                    print('p1_1  '+str(p1_part1),file=file)
-                    print('p1_2  '+str(p1_part2),file=file)
-                    print('p1_3  '+str(p1_part3),file=file)
-                    print('p1_4  '+str(p1_part4),file=file)
-                    print('p1_5  '+str(p1_part5),file=file)
-                    print('p1_6  '+str(p1_part6),file=file)
-                    print('p1_7  '+str(p1_part7),file=file)
-                    print('p1_8  '+str(p1_part8),file=file)
-                    print('',file=file)
+                    #Effect of the first half of the prism
+                    prism_parts_xy_dif_neg_p1=prism_case(x2_prism, 0, -y1_prism, -y2_prism, z2_prism, z1_prism)
+                                       
+                    prism_results_p1=prism_part_sum(prism_parts_xy_dif_neg_p1)
+
+                    #Effect of the second half of the prism
+                    prism_parts_xy_dif_neg_p2=prism_case(-x1_prism, 0, -y1_prism, -y2_prism, z2_prism, z1_prism)
+                                        
+                    prism_results_p2=prism_part_sum(prism_parts_xy_dif_neg_p2)
+
+                    #Sum for the total prism effect
+                    prism_results[i][j]=sub_prism_sum([prism_results_p1,prism_results_p2])
                     
-                    realest_results_p1=p1_part1-p1_part2-p1_part3+p1_part4-p1_part5+p1_part6+p1_part7-p1_part8
-                
-                    print('',file=file)
-                    print('realest results part 1  '+ str(realest_results_p1),file=file)
-                    print('',file=file)
-                    
-                    p2_part1=easy_prism(-x1_prism, -y1_prism, z1_prism)
-                    p2_part2=easy_prism(0, -y1_prism, z1_prism)
-                    p2_part3=easy_prism(-x1_prism, -y2_prism, z1_prism)
-                    p2_part4=easy_prism(0, -y2_prism, z1_prism)
-                    p2_part5=easy_prism(-x1_prism, -y1_prism, z2_prism)
-                    p2_part6=easy_prism(0, -y1_prism, z2_prism)
-                    p2_part7=easy_prism(-x1_prism, -y2_prism, z2_prism)
-                    p2_part8=easy_prism(0, -y2_prism, z2_prism)
-                    
-                    print('',file=file)
-                    print('Easy_prism results :',file=file)
-                    print('',file=file)
-                    print('p2_1  '+str(p2_part1),file=file)
-                    print('p2_2  '+str(p2_part2),file=file)
-                    print('p2_3  '+str(p2_part3),file=file)
-                    print('p2_4  '+str(p2_part4),file=file)
-                    print('p2_5  '+str(p2_part5),file=file)
-                    print('p2_6  '+str(p2_part6),file=file)
-                    print('p2_7  '+str(p2_part7),file=file)
-                    print('p2_8  '+str(p2_part8),file=file)
-                    print('',file=file)
-                    
-                    realest_results_p2=p2_part1-p2_part2-p2_part3+p2_part4-p2_part5+p2_part6+p2_part7-p2_part8
-                    
-                    print('',file=file)
-                    print('realest results part 2  '+ str(realest_results_p2),file=file)
-                    print('',file=file)
-                    
-                    realest_results[i][j]=realest_results_p1+realest_results_p2
-                    
-                    print('',file=file)
-                    print('Realest results : '+str(realest_results[i][j]),file=file)
-                    print('',file=file)
+
                     print('',file=file)
                     print('x have different signs, y signs are negative, x values are '+str(x2_prism)+' '+str(x1_prism),file=file)
                     print('',file=file)
 #For x1 and x2, y1 and y2 of different signs
+#The prism is separated in four, each part effect is calculated separately and then their effect is summed
                 else :
-                    p1_part1=easy_prism(x2_prism, y2_prism, z1_prism)
-                    p1_part2=easy_prism(0, y2_prism, z1_prism)
-                    p1_part3=easy_prism(x2_prism, 0, z1_prism)
-                    p1_part4=easy_prism(0, 0, z1_prism)
-                    p1_part5=easy_prism(x2_prism, y2_prism, z2_prism)
-                    p1_part6=easy_prism(0, y2_prism, z2_prism)
-                    p1_part7=easy_prism(x2_prism, 0, z2_prism)
-                    p1_part8=easy_prism(0, 0, z2_prism)
+                    #Effect of the first fourth of the prism
+                    prism_parts_xy_dif_p1=prism_case(x2_prism, 0, y2_prism, 0, z2_prism, z1_prism)
+                                       
+                    prism_results_p1=prism_part_sum(prism_parts_xy_dif_p1)
+
+                    #Effect of the second fourth of the prism
+                    prism_parts_xy_dif_p2=prism_case(-x1_prism, 0, y2_prism, 0, z2_prism, z1_prism)
+                                       
+                    prism_results_p2=prism_part_sum(prism_parts_xy_dif_p2)
                     
-                    print('',file=file)
-                    print('Easy_prism results :',file=file)
-                    print('',file=file)
-                    print('p1_1  '+str(p1_part1),file=file)
-                    print('p1_2  '+str(p1_part2),file=file)
-                    print('p1_3  '+str(p1_part3),file=file)
-                    print('p1_4  '+str(p1_part4),file=file)
-                    print('p1_5  '+str(p1_part5),file=file)
-                    print('p1_6  '+str(p1_part6),file=file)
-                    print('p1_7  '+str(p1_part7),file=file)
-                    print('p1_8  '+str(p1_part8),file=file)
-                    print('',file=file)
+                    #Effect of the third fourth of the prism
+                    prism_parts_xy_dif_p3=prism_case(x2_prism, 0, -y1_prism, 0, z2_prism, z1_prism)
+                                       
+                    prism_results_p3=prism_part_sum(prism_parts_xy_dif_p3)
                     
-                    realest_results_p1=p1_part1-p1_part2-p1_part3+p1_part4-p1_part5+p1_part6+p1_part7-p1_part8
+                    #Effect of the last fourth of the prism
+                    prism_parts_xy_dif_p4=prism_case(-x1_prism, 0, -y1_prism, 0, z2_prism, z1_prism)
+                                       
+                    prism_results_p4=prism_part_sum(prism_parts_xy_dif_p4)
                     
-                    print('',file=file)
-                    print('realest results part 1  '+ str(realest_results_p1),file=file)
-                    print('',file=file)
+                    #Sum for the total prism effect
+                    prism_results[i][j]=sub_prism_sum([prism_results_p1,prism_results_p2,prism_results_p3,prism_results_p4])
                     
-                    p2_part1=easy_prism(-x1_prism, y2_prism, z1_prism)
-                    p2_part2=easy_prism(0, y2_prism, z1_prism)
-                    p2_part3=easy_prism(-x1_prism, 0, z1_prism)
-                    p2_part4=easy_prism(0, 0, z1_prism)
-                    p2_part5=easy_prism(-x1_prism, y2_prism, z2_prism)
-                    p2_part6=easy_prism(0, y2_prism, z2_prism)
-                    p2_part7=easy_prism(-x1_prism, 0, z2_prism)
-                    p2_part8=easy_prism(0, 0, z2_prism)
-                    
-                    print('',file=file)
-                    print('Easy_prism results :',file=file)
-                    print('',file=file)
-                    print('p2_1  '+str(p2_part1),file=file)
-                    print('p2_2  '+str(p2_part2),file=file)
-                    print('p2_3  '+str(p2_part3),file=file)
-                    print('p2_4  '+str(p2_part4),file=file)
-                    print('p2_5  '+str(p2_part5),file=file)
-                    print('p2_6  '+str(p2_part6),file=file)
-                    print('p2_7  '+str(p2_part7),file=file)
-                    print('p2_8  '+str(p2_part8),file=file)
-                    print('',file=file)
-                    
-                    realest_results_p2=p2_part1-p2_part2-p2_part3+p2_part4-p2_part5+p2_part6+p2_part7-p2_part8
-                    
-                    print('',file=file)
-                    print('realest results part 2  '+ str(realest_results_p2),file=file)
-                    print('',file=file)
-                    
-                    p3_part1=easy_prism(x2_prism, -y1_prism, z1_prism)
-                    p3_part2=easy_prism(0, -y1_prism, z1_prism)
-                    p3_part3=easy_prism(x2_prism, 0, z1_prism)
-                    p3_part4=easy_prism(0, 0, z1_prism)
-                    p3_part5=easy_prism(x2_prism, -y1_prism, z2_prism)
-                    p3_part6=easy_prism(0, -y1_prism, z2_prism)
-                    p3_part7=easy_prism(x2_prism, 0, z2_prism)
-                    p3_part8=easy_prism(0, 0, z2_prism)
-                    
-                    print('',file=file)
-                    print('Easy_prism results :',file=file)
-                    print('',file=file)
-                    print('p3_1  '+str(p3_part1),file=file)
-                    print('p3_2  '+str(p3_part2),file=file)
-                    print('p3_3  '+str(p3_part3),file=file)
-                    print('p3_4  '+str(p3_part4),file=file)
-                    print('p3_5  '+str(p3_part5),file=file)
-                    print('p3_6  '+str(p3_part6),file=file)
-                    print('p3_7  '+str(p3_part7),file=file)
-                    print('p3_8  '+str(p3_part8),file=file)
-                    print('',file=file)
-                    
-                    realest_results_p3=p3_part1-p3_part2-p3_part3+p3_part4-p3_part5+p3_part6+p3_part7-p3_part8
-                    
-                    print('',file=file)
-                    print('realest results part 3  '+ str(realest_results_p3),file=file)
-                    print('',file=file)
-                    
-                    p4_part1=easy_prism(-x1_prism, -y1_prism, z1_prism)
-                    p4_part2=easy_prism(0, -y1_prism, z1_prism)
-                    p4_part3=easy_prism(-x1_prism, 0, z1_prism)
-                    p4_part4=easy_prism(0, 0, z1_prism)
-                    p4_part5=easy_prism(-x1_prism, -y1_prism, z2_prism)
-                    p4_part6=easy_prism(0, -y1_prism, z2_prism)
-                    p4_part7=easy_prism(-x1_prism, 0, z2_prism)
-                    p4_part8=easy_prism(0, 0, z2_prism)
-                    
-                    print('',file=file)
-                    print('Easy_prism results :',file=file)
-                    print('',file=file)
-                    print('p4_1  '+str(p4_part1),file=file)
-                    print('p4_2  '+str(p4_part2),file=file)
-                    print('p4_3  '+str(p4_part3),file=file)
-                    print('p4_4  '+str(p4_part4),file=file)
-                    print('p4_5  '+str(p4_part5),file=file)
-                    print('p4_6  '+str(p4_part6),file=file)
-                    print('p4_7  '+str(p4_part7),file=file)
-                    print('p4_8  '+str(p4_part8),file=file)
-                    print('',file=file)
-                    
-                    realest_results_p4=p4_part1-p4_part2-p4_part3+p4_part4-p4_part5+p4_part6+p4_part7-p4_part8
-                    
-                    print('',file=file)
-                    print('realest results part 4  '+ str(realest_results_p4),file=file)
-                    print('',file=file)
-                    
-                    realest_results[i][j]=realest_results_p1+realest_results_p2+realest_results_p3+realest_results_p4
-                    
-                    print('',file=file)
-                    print('Realest results : '+str(realest_results[i][j]),file=file)
-                    print('',file=file)
                     
                     print('',file=file)
                     print('x and y have different signs, x and y values are '+str(x2_prism)+' '+str(x1_prism)+' and '+str(y2_prism)+' '+str(y1_prism),file=file)
                     print('',file=file)
                     
             #Calculate and store the gravity effect of each prism on the station         
-            realest_effect[i][j]=realest_results[:][i][j]*rho_pri[j]*G*10**3
+            prism_effect[i][j]=prism_results[:][i][j]*rho_pri[j]*G*10**3
+            print("Prism gravity effect = "+str(prism_effect[i][j]), file=file)
             #Calculate and store the disturbing body gravity effect by summing the prisms effects
-            sum_prism_effect[i]=sum(realest_effect[i])
+            sum_prism_effect[i]=sum(prism_effect[i])
             
         file.close()
         
         #Write the stations coordinates and both the disturbing body effect and the individual prisms effects
-        print(str(MPs[i,0])," ",str(MPs[i,1])," ",str(MPs[i,2])," ",sum_prism_effect[i]," ", "    ".join(str(prism) for prism in realest_effect[i]),file=file_prisma)
+        print(str(MPs[i,0])," ",str(MPs[i,1])," ",str(MPs[i,2])," ",sum_prism_effect[i]," ", "    ".join(str(prism) for prism in prism_effect[i]),file=file_prisma)
         
     #Write individual prisms effects in a separate file - optional
     #np.savetxt(str(run_folder_name)+'\Prisma individual prisms results.txt', realest_effect, delimiter=' ', header='Invididual prisms gravity effect (mGal)')
