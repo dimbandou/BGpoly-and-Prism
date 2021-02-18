@@ -225,7 +225,7 @@ def prism_case(xmax, xmin, ymax, ymin, zmax, zmin):
     part8=prism_func(xmin, ymin, zmax)
     if DEBUG==1:
         print('',file=file)
-        print("Prisma case results for coordinates x'max: "+str(xmax)+" x'min: "+str(xmin)+" y'max: "+str(ymax)+" y'min: "+str(ymin)+" z'max: "+str(zmax)+" z'min: "+str(zmin)+" :",file=file)
+        print('Prisma case results for coordinates xmax: '+str(xmax)+' xmin: '+str(xmin)+' ymax: '+str(ymax)+' ymin: '+str(ymin)+' zmax: '+str(zmax)+' zmin: '+str(zmin)+' :',file=file)
         print('',file=file)
         print('part 1 results '+str(part1),file=file)
         print('part 2 results '+str(part2),file=file)
@@ -279,9 +279,6 @@ G=6.67408*10**(-11)
 ########################################
 #Input checks common to both routines
 
-np.set_printoptions(precision=4) #Set precision of the values
-np.set_printoptions(suppress=True) #Disables scientific notation
-
 #DEBUG FLAG CHECK
 if DEBUG ==1:
     print("Debug mode is ON multiple files with intermediate calculation results for each stations will be created.")
@@ -290,11 +287,8 @@ if routine != 'PRISMA' and routine != 'BGPOLY':
     sys.exit('The routine name is wrong, please using either "BGPOLY" or "PRISMA" as inputs, with quotations marks and full capital letters.')
 #Check the total number of MP
 total_stations=len(MPs)
-#Case exception for only 1 MP 
-if number_stations==1 and total_stations!=3:
-    sys.exit("The total number of stations is not the same as indicated : input total is "+str(number_stations)+" , total in file is "+str(total_stations)+" please check your input")
-elif number_stations != 1 and number_stations != total_stations:
-    sys.exit("The total number of stations is not the same as indicated : input total is "+str(number_stations)+" , total in file is "+str(total_stations)+" please check your input")
+if number_stations != total_stations:
+    sys.exit("The total number of stations is not the same as indicated : input total is "+str(sum(number_stations))+" , total in file is "+str(total_stations)+" please check your input")
 #Check that the MPs are within the user's defined study region
 if MPs[:,0].max() > area_MP[0]:
     outofbx= np.where(MPs[:,0]==MPs[:,0].max())
@@ -308,12 +302,12 @@ if MPs[:,1].max() > area_MP[2]:
 if MPs[:,1].min() < area_MP[3]:
     outofbx= np.where(MPs[:,1]==MPs[:,1].min())
     sys.exit("The following stations are out of boundary along the y axis check station(s) "+str(outofbx[0])+" or check your defined study area min y axis value.")
-#if MPs[:,2].max() > area_MP[4]:
-#    outofbx= np.where(MPs[:,1]==MPs[:,1].max())
-#    sys.exit("The following stations are out of boundary along the z axis check station(s) "+str(outofbx[0])+" or check your defined study area max z axis value.")
-#if MPs[:,2].min() < area_MP[5]:
-#    outofbx= np.where(MPs[:,1]==MPs[:,1].min())
-#    sys.exit("The following stations are out of boundary along the z axis check station(s) "+str(outofbx[0])+" or check your defined study area min z axis value.")    
+if MPs[:,2].max() > area_MP[4]:
+    outofbx= np.where(MPs[:,1]==MPs[:,1].max())
+    sys.exit("The following stations are out of boundary along the z axis check station(s) "+str(outofbx[0])+" or check your defined study area max z axis value.")
+if MPs[:,2].min() < area_MP[5]:
+    outofbx= np.where(MPs[:,1]==MPs[:,1].min())
+    sys.exit("The following stations are out of boundary along the z axis check station(s) "+str(outofbx[0])+" or check your defined study area min z axis value.")    
 #If the folder where the run will be saved doesn't exist, it will be created 
 if not os.path.exists(run_folder_name):
     os.makedirs(run_folder_name)    
@@ -617,7 +611,7 @@ if routine=='BGPOLY':
     #print(l,' '+str(MPs[i])+' height calc '+str(j)) #check that the loop is working properly
             
     #Sum the interpolated gravity effect of all the isolines and multiply by 10**3 to convert Gal to mGal
-        gravity_value[i]=sum(body_effect[i])*10**5
+        gravity_value[i]=sum(body_effect[i])*10**3
     #Write the station coordinates and the disturbing body gravity effect on it
         print(str(MPs[i,0])," ",str(MPs[i,1])," ",str(MPs[i,2])," ", gravity_value[i],file=file_bgpoly)
         
@@ -658,9 +652,7 @@ if routine=='PRISMA':
             coor_prism=np.array([[x2s[j],x1s[j]],[y2s[j],y1s[j]],[z2s[j],z1s[j]]])
             rho_prism=rho_pri[j]
             print('',file=file)
-            print('Prism(s) coordinates: xmax: '+str(x2s[j])+', xmin: '+str(x1s[j])+
-                  ', ymax: '+str(y2s[j])+', ymin: '+str(y1s[j])+
-                  ', zmax: '+str(z2s[j])+', zmin: '+str(z1s[j]),file=file)
+            print('Prism(s) coordinates: '+str(x2s[j])+' '+str(x1s[j])+' '+str(y2s[j])+' '+str(y1s[j])+' '+str(z2s[j])+' '+str(z1s[j]),file=file)
             print('Prism(s) density: '+str(rho_pri[j]),file=file)
             print('',file=file)
         
@@ -675,10 +667,8 @@ if routine=='PRISMA':
                 if coor_norm[k,l]==0:
                     coor_norm[k,l]=0.001
             print('',file=file)
-            print('New local prism(s) coordinates: \n'
-            "x'max, x'min:",str(coor_norm[0])+'\n'
-            "y'max, y'min:",str(coor_norm[1])+'\n'
-            "z'max, z'min:",str(coor_norm[2]),file=file)
+            print('New local prism(s) coordinates: '+str(coor_norm),file=file)
+            print('',file=file)
         
             x2_prism=coor_norm[0,0]
             x1_prism=coor_norm[0,1]
@@ -837,7 +827,7 @@ if routine=='PRISMA':
                     print('',file=file)
                     
             #Calculate and store the gravity effect of each prism on the station         
-            prism_effect[i][j]=prism_results[:][i][j]*rho_pri[j]*G*10**5
+            prism_effect[i][j]=prism_results[:][i][j]*rho_pri[j]*G*10**3
             print("Prism gravity effect = "+str(prism_effect[i][j]), file=file)
             #Calculate and store the disturbing body gravity effect by summing the prisms effects
             sum_prism_effect[i]=sum(prism_effect[i])
